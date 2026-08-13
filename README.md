@@ -63,5 +63,3 @@ A função está publicada no Azure Functions em:
     ├── requirements.txt
     ├── README.md
     └── .gitignore
-
-O arquivo local.settings.json é utilizado apenas para execução local e não deve ser versionado no GitHub.
