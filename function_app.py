@@ -1,82 +1,25 @@
 import azure.functions as func
-import json
 import logging
+import json
 
 app = func.FunctionApp()
 
-CUPONS = {
-    "DESCONTO10": 10,
-    "DESCONTO20": 20,
-    "SEMESTRE": 15
-}
-
-@app.route(
-    route="validar_cupom",
-    methods=["POST"],
-    auth_level=func.AuthLevel.ANONYMOUS
+@app.service_bus_queue_trigger(
+    arg_name="msg",
+    queue_name="orders",
+    connection="SERVICE_BUS_CONNECTION"
 )
-def validar_cupom(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("Validando cupom de desconto.")
+def processar_pedido(msg: func.ServiceBusMessage):
+    logging.info("Mensagem recebida do Service Bus.")
 
     try:
-        dados = req.get_json()
-        cupom = dados.get("cupom")
-        valor_compra = dados.get("valor_compra")
-    except ValueError:
-        return func.HttpResponse(
-            json.dumps({"erro": "O corpo da requisição deve ser um JSON válido."}),
-            status_code=400,
-            mimetype="application/json"
+        dados = json.loads(msg.get_body().decode("utf-8"))
+
+        logging.info(
+            f"Pedido recebido: {dados.get('order_id')} | "
+            f"Cliente: {dados.get('cliente')} | "
+            f"Valor: {dados.get('valor')}"
         )
 
-    if not cupom or valor_compra is None:
-        return func.HttpResponse(
-            json.dumps({"erro": "Informe 'cupom' e 'valor_compra'."}),
-            status_code=400,
-            mimetype="application/json"
-        )
-
-    try:
-        valor_compra = float(valor_compra)
-    except (ValueError, TypeError):
-        return func.HttpResponse(
-            json.dumps({"erro": "'valor_compra' deve ser um número."}),
-            status_code=400,
-            mimetype="application/json"
-        )
-
-    if valor_compra < 0:
-        return func.HttpResponse(
-            json.dumps({"erro": "'valor_compra' não pode ser negativo."}),
-            status_code=400,
-            mimetype="application/json"
-        )
-
-    if cupom not in CUPONS:
-        return func.HttpResponse(
-            json.dumps({
-                "cupom": cupom,
-                "valido": False,
-                "mensagem": "Cupom inválido."
-            }),
-            status_code=200,
-            mimetype="application/json"
-        )
-
-    desconto_percentual = CUPONS[cupom]
-    valor_desconto = valor_compra * desconto_percentual / 100
-    valor_final = valor_compra - valor_desconto
-
-    resposta = {
-        "cupom": cupom,
-        "valido": True,
-        "desconto_percentual": desconto_percentual,
-        "valor_desconto": round(valor_desconto, 2),
-        "valor_final": round(valor_final, 2)
-    }
-
-    return func.HttpResponse(
-        json.dumps(resposta),
-        status_code=200,
-        mimetype="application/json"
-    )
+    except Exception as erro:
+        logging.error(f"Erro ao processar mensagem: {erro}")
