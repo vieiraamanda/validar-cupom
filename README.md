@@ -48,7 +48,9 @@ As funções foram implementadas utilizando Azure Functions com Python:
 
 A orquestração é realizada utilizando Azure Logic Apps com estado.
 
-As funções `reserve`, `charge` e `ship` são chamadas sequencialmente. Uma etapa somente é executada após a conclusão da etapa anterior.
+As funções `reserve`, `charge` e `ship` são chamadas sequencialmente dentro de um `Scope`. Uma etapa somente é executada após a conclusão da etapa anterior. Se qualquer etapa falhar (esgotando o retry), o `Scope` é marcado como `Failed` e a ação `Enviar_para_DeadLetter` é disparada.
+
+A definição do workflow está em [`logicapp/checkpoint3-workflow.json`](logicapp/checkpoint3-workflow.json) e pode ser importada diretamente na criação da Logic App (Consumption) no portal ou via `az logic workflow create`.
 
 ## Retry
 
@@ -68,13 +70,20 @@ orders
 
 A função `processar_pedido` é acionada quando uma nova mensagem é disponibilizada nessa fila.
 
-A fila possui limite de **10 tentativas de entrega** (`maxDeliveryCount = 10`). Após exceder esse limite, mensagens que não conseguem ser processadas podem ser encaminhadas para a Dead-Letter Queue (DLQ) do Service Bus.
+A fila possui limite de **10 tentativas de entrega** (`maxDeliveryCount = 10`). Após exceder esse limite, mensagens que não conseguem ser processadas são encaminhadas automaticamente para a Dead-Letter Queue (DLQ) do Service Bus. Esse limite é configurado na criação da fila, ver [`infra/setup.sh`](infra/setup.sh).
 
 ## Idempotência
 
 A solução utiliza uma tabela `ProcessedOrders` no Azure Table Storage como estrutura de persistência para controle de pedidos processados.
 
-A identificação dos pedidos é baseada no `order_id`, permitindo que o fluxo mantenha o registro dos pedidos processados e possa evitar o processamento duplicado.
+A identificação dos pedidos é baseada no `order_id` (usado como `RowKey`). Antes de processar uma mensagem, `processar_pedido` tenta criar uma entidade na tabela; se o `order_id` já existir, a criação falha com `ResourceExistsError` e a mensagem é ignorada, evitando processamento duplicado em caso de reentrega. Ver `function_app.py`.
+
+## Variáveis de ambiente necessárias
+
+Nenhuma delas deve ser commitada. Localmente vão em `local.settings.json` (que está no `.gitignore`); no Azure, em Application Settings da Function App.
+
+* `SERVICE_BUS_CONNECTION` — connection string do namespace do Service Bus
+* `AZURE_TABLES_CONNECTION` — connection string da Storage Account onde vive a tabela `ProcessedOrders`
 
 ## Como executar localmente
 

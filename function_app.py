@@ -1,8 +1,19 @@
 import azure.functions as func
 import logging
 import json
+import os
+
+from azure.data.tables import TableServiceClient
+from azure.core.exceptions import ResourceExistsError
 
 app = func.FunctionApp()
+
+# Cliente da tabela usada para controle de idempotência.
+# A tabela é criada automaticamente se ainda não existir.
+_table_service = TableServiceClient.from_connection_string(
+    os.environ["AZURE_TABLES_CONNECTION"]
+)
+_processed_orders = _table_service.create_table_if_not_exists("ProcessedOrders")
 
 
 @app.service_bus_queue_trigger(
@@ -15,9 +26,23 @@ def processar_pedido(msg: func.ServiceBusMessage):
 
     try:
         dados = json.loads(msg.get_body().decode("utf-8"))
+        order_id = dados.get("order_id")
+
+        # Idempotência: a inserção na tabela só funciona uma vez por order_id.
+        # Se o pedido já foi processado (reentrega, retry duplicado etc.),
+        # a criação da entidade falha com ResourceExistsError e a gente
+        # simplesmente ignora, sem reprocessar.
+        try:
+            _processed_orders.create_entity({
+                "PartitionKey": "orders",
+                "RowKey": order_id
+            })
+        except ResourceExistsError:
+            logging.info(f"Pedido {order_id} já processado. Ignorando (idempotência).")
+            return
 
         logging.info(
-            f"Pedido recebido: {dados.get('order_id')} | "
+            f"Pedido recebido: {order_id} | "
             f"Cliente: {dados.get('cliente')} | "
             f"Valor: {dados.get('valor')}"
         )
