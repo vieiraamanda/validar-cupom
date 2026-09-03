@@ -49,12 +49,6 @@ A função estará disponível em:
       "valor_final": 90.0
     }
 
-## Função publicada no Azure
-
-A função está publicada no Azure Functions em:
-
-    https://validar-cupom-amanda-84721.azurewebsites.net/api/validar_cupom
-
 ## Estrutura do projeto
 
     validar-cupom/
