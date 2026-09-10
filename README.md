@@ -1,142 +1,61 @@
-# Checkpoint 3 — Orquestração de Serviços Serverless
+# Checkpoint 4 — Observabilidade e Otimização
 
-## Descrição
+Projeto desenvolvido para o Checkpoint 4, utilizando Azure Functions, Azure Service Bus, Azure Logic Apps, Azure Table Storage e Azure Monitor.
 
-Projeto desenvolvido para demonstrar uma arquitetura serverless orientada a eventos utilizando Azure Functions, Azure Service Bus e Azure Logic Apps.
+## Observabilidade
 
-O Checkpoint 3 evolui a solução anterior adicionando uma orquestração de serviços, na qual as etapas de processamento são executadas em uma sequência definida por um workflow.
+A aplicação foi instrumentada com logs estruturados em JSON, permitindo acompanhar as principais etapas do processamento.
 
-## Provedor Utilizado
+Principais eventos registrados:
 
-* Microsoft Azure
+* `service_bus_message_received`
+* `order_processed`
+* `duplicate_order`
+* `function_execution`
+* `function_error`
 
-## Arquitetura
+A observabilidade utiliza **Application Insights, Azure Monitor e Log Analytics**, permitindo consultar logs, requisições, falhas e métricas de desempenho.
 
-O fluxo principal é composto pelas seguintes etapas:
+Exemplos de consultas:
 
-1. Uma requisição HTTP inicia o workflow.
-2. A Logic App executa a função `reserve`.
-3. Após o sucesso de `reserve`, executa a função `charge`.
-4. Após o sucesso de `charge`, executa a função `ship`.
-5. As chamadas possuem política de retry com intervalo exponencial para tratar falhas temporárias.
+```kusto
+traces
+| where message contains "function_execution"
+| order by timestamp desc
+```
 
-Fluxo:
+```kusto
+traces
+| where message contains "function_error"
+| order by timestamp desc
+```
+
+```kusto
+requests
+| order by timestamp desc
+| take 20
+```
+
+## Otimizações analisadas
+
+### 1. Redução de logs desnecessários
+
+Manter apenas eventos relevantes reduz o volume de telemetria, o custo de armazenamento e o ruído durante a análise.
+
+### 2. Otimização de retry
+
+Aplicar retry principalmente a falhas transitórias, como timeouts e erros 5xx, evitando novas tentativas para falhas permanentes.
+
+Isso reduz chamadas desnecessárias e melhora a latência em cenários de erro.
+
+### 3. Maior desacoplamento por eventos
+
+Ampliar o uso do Azure Service Bus entre etapas do processamento pode reduzir o acoplamento entre serviços e melhorar escalabilidade e resiliência.
+
+## Evidências
+
+Os screenshots de logs e métricas estão disponíveis em:
 
 ```text
-HTTP Trigger
-     |
-     v
-  reserve
-     |
-     v
-  charge
-     |
-     v
-   ship
+evidencias/checkpoint-4/
 ```
-
-## Funções Serverless
-
-As funções foram implementadas utilizando Azure Functions com Python:
-
-* `reserve` — responsável pela etapa de reserva.
-* `charge` — responsável pela etapa de cobrança.
-* `ship` — responsável pela etapa de envio.
-* `processar_pedido` — função orientada a eventos acionada por mensagens da fila `orders` do Azure Service Bus.
-
-## Orquestração
-
-A orquestração é realizada utilizando Azure Logic Apps com estado.
-
-As funções `reserve`, `charge` e `ship` são chamadas sequencialmente dentro de um `Scope`. Uma etapa somente é executada após a conclusão da etapa anterior. Se qualquer etapa falhar (esgotando o retry), o `Scope` é marcado como `Failed` e a ação `Enviar_para_DeadLetter` é disparada.
-
-A definição do workflow está em [`logicapp/checkpoint3-workflow.json`](logicapp/checkpoint3-workflow.json) e pode ser importada diretamente na criação da Logic App (Consumption) no portal ou via `az logic workflow create`.
-
-## Retry
-
-As três chamadas HTTP da orquestração utilizam política de retry com **Exponential Interval**.
-
-Essa configuração permite novas tentativas em situações de falhas temporárias, como respostas HTTP 408, 429 e erros 5xx, além de determinadas falhas de conectividade.
-
-## Azure Service Bus
-
-O projeto também utiliza Azure Service Bus para processamento orientado a eventos.
-
-A fila utilizada é:
-
-```text
-orders
-```
-
-A função `processar_pedido` é acionada quando uma nova mensagem é disponibilizada nessa fila.
-
-A fila possui limite de **10 tentativas de entrega** (`maxDeliveryCount = 10`). Após exceder esse limite, mensagens que não conseguem ser processadas são encaminhadas automaticamente para a Dead-Letter Queue (DLQ) do Service Bus. Esse limite é configurado na criação da fila, ver [`infra/setup.sh`](infra/setup.sh).
-
-## Idempotência
-
-A solução utiliza uma tabela `ProcessedOrders` no Azure Table Storage como estrutura de persistência para controle de pedidos processados.
-
-A identificação dos pedidos é baseada no `order_id` (usado como `RowKey`). Antes de processar uma mensagem, `processar_pedido` tenta criar uma entidade na tabela; se o `order_id` já existir, a criação falha com `ResourceExistsError` e a mensagem é ignorada, evitando processamento duplicado em caso de reentrega. Ver `function_app.py`.
-
-## Variáveis de ambiente necessárias
-
-Nenhuma delas deve ser commitada. Localmente vão em `local.settings.json` (que está no `.gitignore`); no Azure, em Application Settings da Function App.
-
-* `SERVICE_BUS_CONNECTION` — connection string do namespace do Service Bus
-* `AZURE_TABLES_CONNECTION` — connection string da Storage Account onde vive a tabela `ProcessedOrders`
-
-## Como executar localmente
-
-### Pré-requisitos
-
-* Python 3.11 ou superior
-* Azure Functions Core Tools
-* Azure CLI
-
-### Executar
-
-Na pasta do projeto:
-
-```bash
-func start
-```
-
-As funções HTTP ficam disponíveis localmente em:
-
-```text
-http://localhost:7071/api/reserve
-http://localhost:7071/api/charge
-http://localhost:7071/api/ship
-```
-
-A função `processar_pedido` é acionada por mensagens do Azure Service Bus.
-
-## Teste das funções
-
-Exemplo de requisição para `reserve`:
-
-```bash
-curl -X POST http://localhost:7071/api/reserve \
-  -H "Content-Type: application/json" \
-  -d '{"order_id":"12345","cliente":"Amanda","valor":100}'
-```
-
-As funções `charge` e `ship` podem ser testadas de forma semelhante.
-
-## Segurança
-
-Nenhuma chave de acesso, credencial, segredo ou arquivo `.json` contendo credenciais deve ser versionado no repositório.
-
-Configurações sensíveis são mantidas nas configurações do Azure ou em arquivos locais que não são enviados ao GitHub.
-
-## Tecnologias utilizadas
-
-* Python
-* Azure Functions
-* Azure Logic Apps
-* Azure Service Bus
-* Azure Table Storage
-* Azure Cloud Shell
-* Azure CLI
-* Git
-* GitHub
