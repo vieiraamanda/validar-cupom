@@ -35,7 +35,7 @@ jobs:
         run: |
           python -m py_compile function_app.py
 
-            - name: Login no Azure via OIDC
+      - name: Login no Azure via OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
