@@ -43,15 +43,6 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: false
 
-      - name: Testar acesso ao Azure
-        run: |
-          az account show
-          az functionapp show \
-            --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-            --resource-group VisualStudioOnline-99B0995279F749F68A577EA9E5646ABC \
-            --query "{name:name,state:state}" \
-            -o table
-
       - name: Deploy para Azure Functions
         uses: Azure/functions-action@v1
         with:
