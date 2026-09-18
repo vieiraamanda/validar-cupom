@@ -1,61 +1,50 @@
-# Checkpoint 4 — Observabilidade e Otimização
+# Checkpoint 5 — CI/CD e Deploy Automatizado
 
-Projeto desenvolvido para o Checkpoint 4, utilizando Azure Functions, Azure Service Bus, Azure Logic Apps, Azure Table Storage e Azure Monitor.
+Projeto desenvolvido para o Checkpoint 5, utilizando **GitHub Actions** para automatizar o processo de validação e deploy da Azure Function.
 
-## Observabilidade
+## Objetivo
 
-A aplicação foi instrumentada com logs estruturados em JSON, permitindo acompanhar as principais etapas do processamento.
+Implementar um pipeline de **CI/CD** capaz de automatizar a integração e a implantação das funções serverless do projeto.
 
-Principais eventos registrados:
+A partir de alterações realizadas na branch `checkpoint-5`, o GitHub Actions executa automaticamente as etapas de validação e deploy da aplicação.
 
-* `service_bus_message_received`
-* `order_processed`
-* `duplicate_order`
-* `function_execution`
-* `function_error`
+## Pipeline
 
-A observabilidade utiliza **Application Insights, Azure Monitor e Log Analytics**, permitindo consultar logs, requisições, falhas e métricas de desempenho.
+O workflow está localizado em:
 
-Exemplos de consultas:
-
-```kusto
-traces
-| where message contains "function_execution"
-| order by timestamp desc
+```text
+.github/workflows/deploy.yml
 ```
 
-```kusto
-traces
-| where message contains "function_error"
-| order by timestamp desc
-```
+O pipeline executa as seguintes etapas:
 
-```kusto
-requests
-| order by timestamp desc
-| take 20
-```
+1. Checkout do código-fonte;
+2. Configuração do Python 3.11;
+3. Instalação das dependências do projeto;
+4. Validação da sintaxe do código;
+5. Autenticação no Azure utilizando **OpenID Connect (OIDC)**;
+6. Deploy automático da Azure Function.
 
-## Otimizações analisadas
+## Segurança
 
-### 1. Redução de logs desnecessários
+A autenticação entre o GitHub Actions e o Azure utiliza **OpenID Connect (OIDC)**, evitando a necessidade de armazenar um client secret permanente no repositório.
 
-Manter apenas eventos relevantes reduz o volume de telemetria, o custo de armazenamento e o ruído durante a análise.
+Os identificadores utilizados pelo workflow são armazenados por meio dos **GitHub Actions Secrets**.
 
-### 2. Otimização de retry
-
-Aplicar retry principalmente a falhas transitórias, como timeouts e erros 5xx, evitando novas tentativas para falhas permanentes.
-
-Isso reduz chamadas desnecessárias e melhora a latência em cenários de erro.
-
-### 3. Maior desacoplamento por eventos
-
-Ampliar o uso do Azure Service Bus entre etapas do processamento pode reduzir o acoplamento entre serviços e melhorar escalabilidade e resiliência.
+Nenhuma chave de API, token, credencial, connection string, arquivo `.env` ou `local.settings.json` é versionado no repositório.
 
 ## Evidências
 
-Os screenshots de logs e métricas estão disponíveis em:
+As evidências da execução do pipeline estão disponíveis em:
 
 ```text
-evidencias/checkpoint-4/
+evidencias/checkpoint-5/
 ```
+
+A pasta contém capturas de tela dos principais estágios da execução do GitHub Actions, incluindo a validação, autenticação no Azure e deploy realizado com sucesso.
+
+## Resultado
+
+O pipeline foi executado com sucesso, demonstrando o processo automatizado de CI/CD para implantação da Azure Function.
+
+A cada novo push na branch `checkpoint-5`, o workflow é acionado automaticamente e realiza o processo de validação e deploy configurado.
