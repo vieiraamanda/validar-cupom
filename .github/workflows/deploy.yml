@@ -3,7 +3,7 @@ name: Deploy Azure Function
 on:
   push:
     branches:
-      - checkpoint-5
+      - projeto_final
 
 permissions:
   id-token: write
