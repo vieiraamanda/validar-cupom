@@ -5,7 +5,8 @@ import os
 
 from azure.data.tables import TableServiceClient
 from azure.core.exceptions import ResourceExistsError
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 app = func.FunctionApp()
 
@@ -16,35 +17,17 @@ _table_service = TableServiceClient.from_connection_string(
 )
 _processed_orders = _table_service.create_table_if_not_exists("ProcessedOrders")
 
-genai.configure(api_key=os.environ["GOOGLE_AI_API_KEY"])
+_genai_client = genai.Client(api_key=os.environ["GOOGLE_AI_API_KEY"])
 
 
-def contar_pedidos_cliente(cliente: str) -> int:
-    """Conta quantos pedidos esse cliente já tem registrados na tabela de idempotência."""
+def consultar_historico_cliente(cliente: str) -> int:
+    """Retorna quantos pedidos esse cliente já fez no histórico do sistema.
+
+    Args:
+        cliente: Nome do cliente.
+    """
     filtro = f"Cliente eq '{cliente}'"
     return sum(1 for _ in _processed_orders.query_entities(filtro))
-
-
-_ELEGIBILIDADE_TOOL = genai.protos.Tool(
-    function_declarations=[
-        genai.protos.FunctionDeclaration(
-            name="consultar_historico_cliente",
-            description="Retorna quantos pedidos esse cliente já fez no histórico do sistema.",
-            parameters=genai.protos.Schema(
-                type=genai.protos.Type.OBJECT,
-                properties={
-                    "cliente": genai.protos.Schema(type=genai.protos.Type.STRING, description="Nome do cliente")
-                },
-                required=["cliente"]
-            )
-        )
-    ]
-)
-
-_modelo_elegibilidade = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    tools=[_ELEGIBILIDADE_TOOL]
-)
 
 
 def log_event(event, operation, order_id=None, status=None, error=None):
@@ -302,27 +285,15 @@ def verificar_elegibilidade(req: func.HttpRequest) -> func.HttpResponse:
 
         log_event("function_execution", operation, order_id=order_id, status="started")
 
-        chat = _modelo_elegibilidade.start_chat()
         mensagem = PROMPT_ELEGIBILIDADE.format(order_id=order_id, cliente=cliente, valor=valor)
-        resposta = chat.send_message(mensagem)
 
-        # Se o modelo pedir a ferramenta, executa e devolve o resultado antes da decisão final.
-        parte = resposta.candidates[0].content.parts[0]
-        while hasattr(parte, "function_call") and parte.function_call and parte.function_call.name:
-            args = dict(parte.function_call.args)
-            resultado = contar_pedidos_cliente(args.get("cliente", cliente))
-
-            resposta = chat.send_message(
-                genai.protos.Content(
-                    parts=[genai.protos.Part(
-                        function_response=genai.protos.FunctionResponse(
-                            name="consultar_historico_cliente",
-                            response={"quantidade_pedidos": resultado}
-                        )
-                    )]
-                )
-            )
-            parte = resposta.candidates[0].content.parts[0]
+        # O SDK novo executa a ferramenta sozinho quando o modelo pede
+        # (function calling automático), não precisa de loop manual aqui.
+        resposta = _genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=mensagem,
+            config=types.GenerateContentConfig(tools=[consultar_historico_cliente])
+        )
 
         texto_final = resposta.text
         decisao = "APROVADO" if "APROVADO" in texto_final.upper() and "REVISAO_MANUAL" not in texto_final.upper() else "REVISAO_MANUAL"
