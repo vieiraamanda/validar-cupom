@@ -1,0 +1,97 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "reserve_url": { "type": "string" },
+      "charge_url": { "type": "string" },
+      "ship_url": { "type": "string" },
+      "deadletter_url": { "type": "string" }
+    },
+    "triggers": {
+      "manual": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "order_id": { "type": "string" },
+              "cliente": { "type": "string" },
+              "valor": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "actions": {
+      "Pipeline_Pedido": {
+        "type": "Scope",
+        "actions": {
+          "Reserve": {
+            "type": "Http",
+            "inputs": {
+              "method": "POST",
+              "uri": "@parameters('reserve_url')",
+              "body": "@triggerBody()"
+            },
+            "runtimeConfiguration": {
+              "retryPolicy": {
+                "type": "Exponential",
+                "count": 3,
+                "interval": "PT10S"
+              }
+            }
+          },
+          "Charge": {
+            "type": "Http",
+            "runAfter": { "Reserve": ["Succeeded"] },
+            "inputs": {
+              "method": "POST",
+              "uri": "@parameters('charge_url')",
+              "body": "@body('Reserve')"
+            },
+            "runtimeConfiguration": {
+              "retryPolicy": {
+                "type": "Exponential",
+                "count": 3,
+                "interval": "PT10S"
+              }
+            }
+          },
+          "Ship": {
+            "type": "Http",
+            "runAfter": { "Charge": ["Succeeded"] },
+            "inputs": {
+              "method": "POST",
+              "uri": "@parameters('ship_url')",
+              "body": "@body('Charge')"
+            },
+            "runtimeConfiguration": {
+              "retryPolicy": {
+                "type": "Exponential",
+                "count": 3,
+                "interval": "PT10S"
+              }
+            }
+          }
+        }
+      },
+      "Enviar_para_DeadLetter": {
+        "type": "Http",
+        "runAfter": {
+          "Pipeline_Pedido": ["Failed", "TimedOut", "Skipped"]
+        },
+        "inputs": {
+          "method": "POST",
+          "uri": "@parameters('deadletter_url')",
+          "body": {
+            "order_id": "@triggerBody()?['order_id']",
+            "resultado_pipeline": "@result('Pipeline_Pedido')"
+          }
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

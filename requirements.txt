@@ -1,1 +1,4 @@
 azure-functions
+azure-servicebus
+azure-data-tables
+google-genai
